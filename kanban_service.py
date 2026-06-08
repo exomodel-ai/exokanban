@@ -62,6 +62,30 @@ class KanbanService:
             uow.commit()
         return dest_name
 
+    def move_card_to_next_column(self, card_id: int) -> str:
+        """Moves card one step forward in position order. Returns destination column name."""
+        from models.card import Card
+        with UnitOfWork() as uow:
+            board = Board.get_by_id(self.board_id)
+            for col in board.columns:
+                _ = col.cards
+            card = Card.get_by_id(card_id)
+            if not card:
+                raise ValueError(f"Card #{card_id} not found.")
+            sorted_cols = sorted(board.columns, key=lambda c: c.position)
+            current_col = next((c for c in sorted_cols if c.id == card.column_id), None)
+            if not current_col:
+                raise ValueError("Card is not in any column.")
+            idx = sorted_cols.index(current_col)
+            if idx >= len(sorted_cols) - 1:
+                raise ValueError(f"Card is already in the last column ('{current_col.name}').")
+            next_col = sorted_cols[idx + 1]
+            current_col.remove_card(card)
+            next_col.insert_card(card)
+            dest_name = next_col.name
+            uow.commit()
+        return dest_name
+
     def archive_card(self, card_id: int) -> str:
         from models.card import Card
         with UnitOfWork() as uow:
@@ -118,8 +142,11 @@ class KanbanService:
 
         with UnitOfWork() as uow:
             board = Board.get_by_id(self.board_id)
+            # Only active columns — exclude the last two (done + archive) when possible
+            sorted_cols = sorted(board.columns, key=lambda c: c.position)
+            active_cols = sorted_cols[:-2] if len(sorted_cols) > 2 else sorted_cols
             all_cards = []
-            for col in board.columns:
+            for col in active_cols:
                 _ = col.cards
                 all_cards.extend(col.get_cards())
 

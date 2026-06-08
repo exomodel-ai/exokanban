@@ -48,6 +48,7 @@ class KanbanInteraction(UserInteraction):
                 "/new [prompt] - Create a new card\n"
                 "<space>[prompt] - Create a new card (same as /new)\n"
                 "/update [prompt] - Update current card\n"
+                "/move - Move current card to next column\n"
                 "/move [column] - Move current card to column\n"
                 "/archive - Archive current card\n"
                 "/archive [id] - Archive card by id\n"
@@ -129,9 +130,13 @@ class KanbanInteraction(UserInteraction):
     def move_current_card(self, prompt: str) -> str:
         if not self._current_card_id:
             return "No card selected. Use /card to select one first."
-        if not prompt:
-            return "Please specify the destination column. Ex: /move Priority"
-        dest_name = self._service.move_card(self._current_card_id, prompt)
+        try:
+            if not prompt:
+                dest_name = self._service.move_card_to_next_column(self._current_card_id)
+            else:
+                dest_name = self._service.move_card(self._current_card_id, prompt)
+        except ValueError as e:
+            return str(e)
         return f"Card moved to '{dest_name}'."
 
     def update_current_card(self, prompt: str) -> str:

@@ -202,10 +202,35 @@ def test_move_current_card_sem_selecao(interaction):
     assert "No card selected" in result
 
 
-def test_move_current_card_sem_prompt(interaction, card_id):
+def test_move_current_card_sem_prompt_move_para_proxima_coluna(db_engine, interaction, card_id):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        cols = sorted(board.columns, key=lambda c: c.position)
+        source_col_id = cols[0].id
+        next_col_id   = cols[1].id
+        next_col_name = cols[1].name
+
     interaction._current_card_id = card_id
     result = interaction.move_current_card("")
-    assert "destination column" in result
+
+    assert next_col_name in result
+    with UnitOfWork() as uow:
+        card = Card.get_by_id(card_id)
+    assert card.column_id == next_col_id
+
+
+def test_move_current_card_ultima_coluna_retorna_erro(db_engine, interaction, card_id):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        last_col_id = sorted(board.columns, key=lambda c: c.position)[-1].id
+        card = Card.get_by_id(card_id)
+        card.column_id = last_col_id
+        card.save()
+        uow.commit()
+
+    interaction._current_card_id = card_id
+    result = interaction.move_current_card("")
+    assert "last column" in result
 
 
 def test_move_current_card_muda_coluna(db_engine, interaction, card_id):
@@ -480,6 +505,37 @@ def test_due_card_proxima_semana(db_engine, interaction):
 def test_due_nao_inclui_cards_sem_prazo(db_engine, interaction, card_id):
     result = interaction.show_due_cards()
     assert "Tarefa Teste" not in result
+
+
+def test_due_nao_inclui_cards_em_colunas_concluidas(db_engine):
+    """Cards in the last two columns (done + archive) must not appear in /due.
+    Requires a board with > 2 columns so the [:-2] guard activates."""
+    past = datetime.now() - td(days=1)
+    with UnitOfWork() as uow:
+        board = Board(name="Board 4 cols").save()
+        uow.flush()
+        board_id = board.id
+        for i, name in enumerate(["Inbox", "Today", "Done", "Archive"]):
+            Column(name=name, board_id=board_id, position=float(i)).save()
+        uow.commit()
+
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(board_id)
+        cols = sorted(board.columns, key=lambda c: c.position)
+        Card(title="Active Overdue",  column_id=cols[0].id, due_date=past).save()
+        Card(title="Done Overdue",    column_id=cols[2].id, due_date=past).save()
+        Card(title="Archive Overdue", column_id=cols[3].id, due_date=past).save()
+        uow.commit()
+
+    ki = KanbanInteraction()
+    ki.board = SimpleNamespace(id=board_id)
+    ki._service = KanbanService(board_id)
+    ki._current_card_id = None
+
+    result = ki.show_due_cards()
+    assert "Active Overdue"  in result
+    assert "Done Overdue"    not in result
+    assert "Archive Overdue" not in result
 
 
 def test_due_nao_inclui_arquivados(db_engine, interaction):
