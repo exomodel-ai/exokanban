@@ -98,6 +98,25 @@ class KanbanService:
             uow.commit()
         return f"Card #{card_id} '{title}' archived."
 
+    def get_column(self, column_id: int) -> "Column":
+        from models.column import Column
+        with UnitOfWork() as uow:
+            column = Column.get_by_id(column_id)
+        if not column:
+            raise ValueError(f"Column #{column_id} not found.")
+        return column
+
+    def update_column(self, column_id: int, prompt: str) -> "Column":
+        from models.column import Column
+        with UnitOfWork() as uow:
+            column = Column.get_by_id(column_id)
+            if not column:
+                raise ValueError(f"Column #{column_id} not found.")
+            column.update_object(prompt)
+            uow.commit()
+            uow.refresh(column)
+        return column
+
     def find_card(self, prompt: str) -> Optional["Card"]:
         """Semantic search across the board. Returns Card or None."""
         with UnitOfWork() as uow:
@@ -116,6 +135,20 @@ class KanbanService:
                 _ = col.cards
             result = board.show_column_cards()
         return result
+
+    def show_board_data(self) -> tuple[str, list[list[tuple[int, str]]]]:
+        """Returns (board_text, card_groups) — each group is a list of (card_id, title) per column."""
+        with UnitOfWork() as uow:
+            board = Board.get_by_id(self.board_id)
+            for col in board.columns:
+                _ = col.cards
+            text = board.show_column_cards()
+            card_groups = [
+                [(c.id, c.title) for c in col.get_cards()]
+                for col in sorted(board.columns, key=lambda c: c.position)
+                if col.get_cards()
+            ]
+        return text, card_groups
 
     def list_cards(self, column_hint: str = "") -> str:
         with UnitOfWork() as uow:

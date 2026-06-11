@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logging
+import os
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -11,7 +12,7 @@ from db.seed import seed
 
 from models.board import Board
 from kanban_service import KanbanService
-from userinteraction import UserInteraction
+from userinteraction import UserInteraction, BotResponse
 
 
 create_tables()
@@ -24,6 +25,7 @@ class KanbanInteraction(UserInteraction):
         super().__init__(*args, **kwargs)
         self._service = KanbanService(self.board.id)
         self._current_card_id: Optional[int] = None
+        self._board_card_buttons = os.getenv("BOARD_CARD_BUTTONS", "true").lower() == "true"
 
     async def process_prompt(self, user_id, text):
         try:
@@ -46,12 +48,14 @@ class KanbanInteraction(UserInteraction):
                 "/card [prompt] - Get card from prompt\n"
                 "/cards [column id - optional] - Get cards from the board or a specific column\n"
                 "/new [prompt] - Create a new card\n"
-                "<space>[prompt] - Create a new card (same as /new)\n"
+                "n [prompt] - Create a new card (same as /new)\n"
                 "/update [prompt] - Update current card\n"
                 "/move - Move current card to next column\n"
                 "/move [column] - Move current card to column\n"
                 "/archive - Archive current card\n"
                 "/archive [id] - Archive card by id\n"
+                "/column [id] - Show column\n"
+                "/updcolumn [id] [prompt] - Update column\n"
                 "/old - Move old cards to old cards column\n"
                 "/due - Cards with due dates: overdue, today and next 7 days\n"
                 "/export - Export board.csv, column.csv and card.csv\n"
@@ -60,12 +64,23 @@ class KanbanInteraction(UserInteraction):
         elif "/instructions" in msg_clean:
             return self.board.run_filling_instructions()
         elif "/board" in msg_clean:
-            return self._service.show_board()
+            return self.show_board()
         elif "/cards" in msg_clean:
             column_hint = msg_clean.replace("/cards", "").strip()
             return self._service.list_cards(column_hint)
-        elif text.startswith(" "):
-            return self.create_card(msg)
+        elif "/updcolumn" in msg_clean:
+            rest = msg[msg.lower().index("/updcolumn") + len("/updcolumn"):].strip()
+            parts = rest.split(None, 1)
+            if len(parts) < 2 or not parts[0].isdigit():
+                return "Usage: /updcolumn [id] [prompt]. Ex: /updcolumn 2 rename to In Review"
+            return self.update_column(int(parts[0]), parts[1])
+        elif "/column" in msg_clean:
+            hint = msg[msg.lower().index("/column") + len("/column"):].strip()
+            if not hint.isdigit():
+                return "Usage: /column [id]. Ex: /column 2"
+            return self.get_column(int(hint))
+        elif msg_clean.startswith("n "):
+            return self.create_card(msg[2:].strip())
         elif "/new" in msg_clean:
             prompt = msg[msg.lower().index("/new") + len("/new"):].strip()
             return self.create_card(prompt)
@@ -173,6 +188,20 @@ class KanbanInteraction(UserInteraction):
         self._current_card_id = card.id
         return card.to_ui()
 
+    def get_column(self, column_id: int) -> str:
+        try:
+            column = self._service.get_column(column_id)
+            return column.to_ui()
+        except ValueError as e:
+            return str(e)
+
+    def update_column(self, column_id: int, prompt: str) -> str:
+        try:
+            column = self._service.update_column(column_id, prompt)
+            return column.to_ui()
+        except ValueError as e:
+            return str(e)
+
     def run_master_prompt(self, msg: str) -> str:
         result, new_card_id = self._service.run_board_prompt(msg, self._current_card_id)
         if new_card_id is not None:
@@ -180,7 +209,17 @@ class KanbanInteraction(UserInteraction):
         return result
 
     # Delegated directly — no state management needed
-    def show_board(self) -> str:        return self._service.show_board()
+    def show_board(self):
+        if self._board_card_buttons:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            text, card_groups = self._service.show_board_data()
+            rows = [
+                [InlineKeyboardButton(f"#{card_id} {title}", callback_data=f"card_{card_id}")]
+                for group in card_groups
+                for card_id, title in group
+            ]
+            return BotResponse(text=text, reply_markup=InlineKeyboardMarkup(rows) if rows else None)
+        return self._service.show_board()
     def show_due_cards(self) -> str:    return self._service.show_due_cards()
     def move_old_cards(self) -> str:    return self._service.move_old_cards()
     def export_to_csv(self) -> str:     return self._service.export_to_csv()

@@ -287,9 +287,9 @@ def test_new_command_routing(db_engine, interaction):
     assert "Tarefa Criada" in result
 
 
-def test_space_prefix_routing(db_engine, interaction):
+def test_n_prefix_routing(db_engine, interaction):
     with patch.object(Board, "create_card_from_prompt", _mock_create_card):
-        result = asyncio.run(interaction.process_prompt("user", " tarefa via espaço"))
+        result = asyncio.run(interaction.process_prompt("user", "n tarefa via prefixo n"))
     assert "Tarefa Criada" in result
 
 
@@ -652,3 +652,161 @@ def test_move_old_cards_nao_move_arquivados(db_engine, interaction):
     with UnitOfWork() as uow:
         card = Card.get_by_id(card_id)
     assert card.column_id == source_col_id
+
+
+# ---------------------------------------------------------------------------
+# get_column
+# ---------------------------------------------------------------------------
+
+def test_get_column_nao_encontrado(interaction):
+    result = interaction.get_column(9999)
+    assert "9999" in result
+    assert "not found" in result
+
+
+def test_get_column_retorna_ui(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col_id = board.columns[0].id
+
+    result = interaction.get_column(col_id)
+    assert "Inbox" in result
+
+
+def test_column_command_sem_id_numerico(db_engine, interaction):
+    result = asyncio.run(interaction.process_prompt("user", "/column abc"))
+    assert "Usage" in result
+
+
+def test_column_command_routing(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col_id = board.columns[0].id
+
+    result = asyncio.run(interaction.process_prompt("user", f"/column {col_id}"))
+    assert "Inbox" in result
+
+
+# ---------------------------------------------------------------------------
+# update_column
+# ---------------------------------------------------------------------------
+
+def test_update_column_nao_encontrado(interaction):
+    result = interaction.update_column(9999, "rename to Foo")
+    assert "9999" in result
+    assert "not found" in result
+
+
+def test_updcolumn_command_sem_id_numerico(db_engine, interaction):
+    result = asyncio.run(interaction.process_prompt("user", "/updcolumn abc rename"))
+    assert "Usage" in result
+
+
+def test_updcolumn_command_sem_prompt(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col_id = board.columns[0].id
+
+    result = asyncio.run(interaction.process_prompt("user", f"/updcolumn {col_id}"))
+    assert "Usage" in result
+
+
+def test_update_column_persiste_e_retorna_ui(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col_id = board.columns[0].id
+
+    def mock_update(self, prompt):
+        self.name = "Em Andamento"
+        return {"name": "Em Andamento"}
+
+    with patch.object(Column, "update_object", mock_update):
+        result = interaction.update_column(col_id, "rename to Em Andamento")
+
+    assert "Em Andamento" in result
+    with UnitOfWork() as uow:
+        col = Column.get_by_id(col_id)
+    assert col.name == "Em Andamento"
+
+
+def test_updcolumn_command_routing(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col_id = board.columns[0].id
+
+    def mock_update(self, prompt):
+        self.name = "Revisão"
+        return {"name": "Revisão"}
+
+    with patch.object(Column, "update_object", mock_update):
+        result = asyncio.run(
+            interaction.process_prompt("user", f"/updcolumn {col_id} rename to Revisão")
+        )
+
+    assert "Revisão" in result
+
+
+# ---------------------------------------------------------------------------
+# show_column_cards — título com contagem e WIP
+# ---------------------------------------------------------------------------
+
+def test_show_column_cards_titulo_sem_wip(db_engine, interaction, card_id):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col = board.columns[0]
+        col_id = col.id
+        result = col.show_column_cards()
+
+    assert f"#{col_id}" in result
+    assert "Inbox" in result
+    assert "(1)" in result
+    assert "🚨" not in result
+
+
+def test_show_column_cards_titulo_sem_cards(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col = board.columns[0]
+        col_id = col.id
+        result = col.show_column_cards()
+
+    assert f"#{col_id}" in result
+    assert "(0)" in result
+
+
+def test_show_column_cards_wip_nao_ultrapassado(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col = board.columns[0]
+        col.wip_limit = 3
+        col.save()
+        Card(title="C1", column_id=col.id).save()
+        Card(title="C2", column_id=col.id).save()
+        uow.commit()
+        col_id = col.id
+
+    with UnitOfWork() as uow:
+        col = Column.get_by_id(col_id)
+        result = col.show_column_cards()
+
+    assert "(2/3)" in result
+    assert "🚨" not in result
+
+
+def test_show_column_cards_wip_ultrapassado(db_engine, interaction):
+    with UnitOfWork() as uow:
+        board = Board.get_by_id(interaction.board.id)
+        col = board.columns[0]
+        col.wip_limit = 1
+        col.save()
+        Card(title="C1", column_id=col.id).save()
+        Card(title="C2", column_id=col.id).save()
+        uow.commit()
+        col_id = col.id
+
+    with UnitOfWork() as uow:
+        col = Column.get_by_id(col_id)
+        result = col.show_column_cards()
+
+    assert "(2/1)" in result
+    assert "🚨" in result

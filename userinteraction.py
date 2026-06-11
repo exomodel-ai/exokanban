@@ -2,10 +2,18 @@ import os
 import logging
 import asyncio
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 from telegram.constants import ParseMode
 from dotenv import load_dotenv
+
+
+@dataclass
+class BotResponse:
+    text: str
+    reply_markup: Any = field(default=None)
 
 load_dotenv()
 
@@ -48,15 +56,15 @@ class UserInteraction(ABC):
             # 1. Run the prompt and capture the result
             result = await self.process_prompt(user_id, update.message.text)
 
-            # 2. Ensure the result is a plain string
-            if isinstance(result, str):
-                text = result
+            # 2. Unpack BotResponse or coerce to string
+            if isinstance(result, BotResponse):
+                text, reply_markup = result.text, result.reply_markup
+            elif isinstance(result, str):
+                text, reply_markup = result, None
             elif hasattr(result, 'model_dump_json'):
-                # Pydantic object — format it
-                text = f"✅ Object updated successfully:\n\n{str(result)}"
+                text, reply_markup = f"✅ Object updated successfully:\n\n{str(result)}", None
             else:
-                # Generic fallback for lists, dicts, or other objects
-                text = str(result)
+                text, reply_markup = str(result), None
 
             # 3. Safety cap: Telegram rejects messages longer than 4096 characters
             if len(text) > 4000:
@@ -70,7 +78,27 @@ class UserInteraction(ABC):
             # 5. Send safely
             await update.message.reply_text(
                 text,
-                parse_mode=ParseMode.HTML if text.startswith("<") else None
+                parse_mode=ParseMode.HTML if ("<b>" in text or "<i>" in text) else None,
+                reply_markup=reply_markup,
+            )
+
+    async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+
+        if not self.is_authorized(query.from_user.id):
+            await query.answer("❌ This bot is private.", show_alert=True)
+            return
+
+        if query.data and query.data.startswith("card_"):
+            card_id = int(query.data[5:])
+            result = await self.process_prompt(query.from_user.id, f"/card {card_id}")
+            text = result.text if isinstance(result, BotResponse) else str(result)
+            if len(text) > 4000:
+                text = text[:4000] + "\n\n... [Message truncated by Telegram limit]"
+            await query.message.reply_text(
+                text,
+                parse_mode=ParseMode.HTML if ("<b>" in text or "<i>" in text) else None,
             )
 
     # --- Runners ---
@@ -82,6 +110,7 @@ class UserInteraction(ABC):
             logger.info("Starting TELEGRAM mode...")
             app = ApplicationBuilder().token(self.token).build()
             app.add_handler(MessageHandler(filters.TEXT | filters.COMMAND, self._handle_telegram))
+            app.add_handler(CallbackQueryHandler(self._handle_callback))
             app.run_polling()
 
         else:
@@ -94,6 +123,8 @@ class UserInteraction(ABC):
             text = input(">>> ")
             if text.lower() in ["sair", "/sair", "exit", "/exit", "quit", "/quit"]: break
             response = await self.process_prompt("DEV-CLI", text)
+            if isinstance(response, BotResponse):
+                response = response.text
             print(f"Bot: {response}\n")
 
 

@@ -47,7 +47,15 @@ class Column(ExoSQLModel, table=True):
     @llm_function
     def show_column_cards(self) -> str:
         cards = self.get_cards()
-        lines = [f"<b>{self.name}</b> <i>(#{self.id})</i>", "━━━━━━━━━━━━━━━━━━━━"]
+        count = len(cards)
+        if self.wip_limit > 0:
+            wip_exceeded = count > self.wip_limit
+            wip_indicator = " 🚨" if wip_exceeded else ""
+            count_str = f"{count}/{self.wip_limit}"
+        else:
+            wip_indicator = ""
+            count_str = str(count)
+        lines = [f"<b>#{self.id} {self.name}</b> <i>({count_str})</i>{wip_indicator}", "━━━━━━━━━━━━━━━━━━━━"]
         if not cards:
             lines.append("<i>No cards</i>")
         for card in cards:
