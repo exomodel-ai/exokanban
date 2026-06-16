@@ -42,6 +42,24 @@ class Card(ExoSQLModel, table=True):
                 fields[name] = (field.annotation, field.default)
         return create_model(f"{cls.__name__}Extraction", **fields)
 
+    def is_overdue(self) -> bool:
+        return self.due_date is not None and self.due_date.date() < datetime.now().date()
+
+    def is_due_within(self, days: int) -> bool:
+        from datetime import timedelta
+        if self.due_date is None:
+            return False
+        today = datetime.now().date()
+        return today <= self.due_date.date() <= today + timedelta(days=days)
+
+    def is_stale(self, days: int) -> bool:
+        from datetime import timedelta
+        return self.updated_at < datetime.now() - timedelta(days=days)
+
+    def lead_time_days(self) -> float | None:
+        delta = self.updated_at - self.created_at
+        return delta.total_seconds() / 86400 if delta.total_seconds() > 0 else None
+
     @classmethod
     def get_rag_sources(cls) -> list[str]:
         return ["rag/card.md", "rag/kanban-to-do.md"]

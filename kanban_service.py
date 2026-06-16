@@ -175,9 +175,7 @@ class KanbanService:
 
         with UnitOfWork() as uow:
             board = Board.get_by_id(self.board_id)
-            # Only active columns — exclude the last two (done + archive) when possible
-            sorted_cols = sorted(board.columns, key=lambda c: c.position)
-            active_cols = sorted_cols[:-2] if len(sorted_cols) > 2 else sorted_cols
+            active_cols = board.active_columns()
             all_cards = []
             for col in active_cols:
                 _ = col.cards
@@ -216,11 +214,10 @@ class KanbanService:
         cutoff = datetime.now() - timedelta(days=30)
         with UnitOfWork() as uow:
             board = Board.get_by_id(self.board_id)
-            sorted_cols = sorted(board.columns, key=lambda c: c.position)
-            if len(sorted_cols) < 2:
-                return "The board needs at least 2 columns."
-            col_source  = sorted_cols[-2]
-            col_dest    = sorted_cols[-1]
+            col_source = board.done_column()
+            col_dest   = board.archive_column()
+            if not col_source or not col_dest:
+                return "The board needs at least NUM_ACTIVE_COLUMNS + 2 columns."
             source_name = col_source.name
             dest_name   = col_dest.name
             _ = col_source.cards
@@ -257,6 +254,114 @@ class KanbanService:
                 f.write(content)
 
         return "✅ Exported: board.csv, column.csv, card.csv"
+
+    def analyze_board(self) -> str:
+        from collections import Counter
+        from statistics import mean, median
+
+        with UnitOfWork() as uow:
+            board = Board.get_by_id(self.board_id)
+            for col in board.columns:
+                _ = col.cards
+
+            active_cols = board.active_columns()
+            done_col    = board.done_column()
+            active_cards = [c for col in active_cols for c in col.cards if not c.archived]
+            total = len(active_cards)
+
+            # Colunas
+            col_lines = []
+            for col in active_cols:
+                count  = col.active_count()
+                status = col.wip_status()
+                suffix = f" ({count}/{col.wip_limit})" if col.wip_limit > 0 else f" ({count})"
+                col_lines.append(f"  {col.name}: {status}{suffix}")
+
+            # Prazo
+            overdue_count = sum(1 for c in active_cards if c.is_overdue())
+            due_7_count   = sum(1 for c in active_cards if not c.is_overdue() and c.is_due_within(7))
+            high_no_due   = sum(1 for c in active_cards if c.priority in ("high", "critical") and c.due_date is None)
+
+            # Prioridade
+            priorities   = Counter(c.priority for c in active_cards)
+            fire_pct     = round((priorities["critical"] + priorities["high"]) / total * 100) if total else 0
+            first_col    = active_cols[0] if active_cols else None
+            crit_inbox   = sum(1 for c in (first_col.cards if first_col else []) if not c.archived and c.priority == "critical")
+
+            # Envelhecimento
+            stale_7  = [(col.name, len(col.stale_cards(7)))  for col in active_cols]
+            stale_30 = [(col.name, len(col.stale_cards(30))) for col in active_cols]
+            stale_7_total  = sum(n for _, n in stale_7)
+            stale_30_total = sum(n for _, n in stale_30)
+
+            # Tags
+            tag_counts = Counter(c.tag for c in active_cards if c.tag)
+            no_tag     = sum(1 for c in active_cards if not c.tag)
+
+            # Board geral
+            col_counts   = [(col, col.active_count())        for col in active_cols]
+            stale_counts = [(col, len(col.stale_cards(7)))   for col in active_cols]
+            most_loaded  = max(col_counts,   key=lambda x: x[1])[0] if col_counts else None
+            bottleneck   = max(stale_counts, key=lambda x: x[1])[0] if stale_counts and max(n for _, n in stale_counts) > 0 else None
+
+            # Lead time
+            lead_times = [lt for c in (done_col.cards if done_col else []) if not c.archived and (lt := c.lead_time_days()) is not None]
+
+            # --- Formatação ---
+            lines = [f"<b>📊 {board.name}</b>\n"]
+
+            lines.append("<b>Colunas</b>")
+            lines.extend(col_lines)
+
+            lines.append("\n<b>Prazo</b>")
+            lines.append(f"  Vencidos: {overdue_count}")
+            lines.append(f"  Vencendo em 7 dias: {due_7_count}")
+            lines.append(f"  High/critical sem prazo: {high_no_due}")
+
+            lines.append("\n<b>Prioridade</b>")
+            dist = " · ".join(f"{k}: {priorities[k]}" for k in ("critical", "high", "medium", "low") if priorities[k])
+            lines.append(f"  {dist}" if dist else "  (sem cards)")
+            lines.append(f"  Fire-fighting: {fire_pct}%")
+            if crit_inbox and first_col:
+                lines.append(f"  ⚠️ {crit_inbox} critical em {first_col.name}")
+
+            lines.append("\n<b>Envelhecimento</b>")
+            detail_7  = ", ".join(f"{n} em {c}" for c, n in stale_7  if n)
+            detail_30 = ", ".join(f"{n} em {c}" for c, n in stale_30 if n)
+            lines.append(f"  Estagnados >7d: {stale_7_total}"  + (f" ({detail_7})"  if detail_7  else ""))
+            lines.append(f"  Estagnados >30d: {stale_30_total}" + (f" ({detail_30})" if detail_30 else ""))
+
+            lines.append("\n<b>Tags</b>")
+            if tag_counts:
+                lines.append("  " + " · ".join(f"{tag}: {n}" for tag, n in tag_counts.most_common()))
+            lines.append(f"  Sem tag: {no_tag}")
+
+            lines.append("\n<b>Board geral</b>")
+            lines.append(f"  Total ativo: {total}")
+            if most_loaded:
+                ml_count = next(n for col, n in col_counts if col is most_loaded)
+                lines.append(f"  Mais carregada: {most_loaded.name} ({ml_count})")
+            if bottleneck:
+                bt_count = next(n for col, n in stale_counts if col is bottleneck)
+                lines.append(f"  Gargalo: {bottleneck.name} ({bt_count} estagnados >7d)")
+
+            lines.append("\n<b>Lead time (Feito)</b>")
+            if lead_times:
+                lines.append(f"  Médio: {mean(lead_times):.1f}d · Mediano: {median(lead_times):.1f}d")
+                lines.append(f"  Mín: {min(lead_times):.1f}d · Máx: {max(lead_times):.1f}d")
+            else:
+                lines.append("  Sem dados.")
+
+            result = "\n".join(lines)
+
+        return result
+
+    def run_filling_instructions(self) -> str:
+        with UnitOfWork() as uow:
+            board = Board.get_by_id(self.board_id)
+            result = board.run_filling_instructions()
+            uow.commit()
+        return result
 
     def run_board_prompt(self, prompt: str, current_card_id: Optional[int] = None) -> tuple[str, Optional[int]]:
         """Routes a free-text prompt through the board's master_prompt.

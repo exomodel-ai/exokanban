@@ -507,9 +507,9 @@ def test_due_nao_inclui_cards_sem_prazo(db_engine, interaction, card_id):
     assert "Tarefa Teste" not in result
 
 
-def test_due_nao_inclui_cards_em_colunas_concluidas(db_engine):
-    """Cards in the last two columns (done + archive) must not appear in /due.
-    Requires a board with > 2 columns so the [:-2] guard activates."""
+def test_due_nao_inclui_cards_em_colunas_concluidas(db_engine, monkeypatch):
+    """Cards in done/archive columns (beyond NUM_ACTIVE_COLUMNS) must not appear in /due."""
+    monkeypatch.setenv("NUM_ACTIVE_COLUMNS", "2")
     past = datetime.now() - td(days=1)
     with UnitOfWork() as uow:
         board = Board(name="Board 4 cols").save()
@@ -600,15 +600,17 @@ def test_move_old_cards_board_com_menos_de_2_colunas(db_engine):
     ki = KanbanInteraction()
     ki.board = SimpleNamespace(id=board_id)
     result = ki.move_old_cards()
-    assert "at least 2 columns" in result
+    assert "needs at least" in result
 
 
-def test_move_old_cards_sem_cards_antigos(db_engine, interaction, card_id):
+def test_move_old_cards_sem_cards_antigos(db_engine, interaction, card_id, monkeypatch):
+    monkeypatch.setenv("NUM_ACTIVE_COLUMNS", "0")
     result = interaction.move_old_cards()
     assert "No cards older" in result
 
 
-def test_move_old_cards_move_para_ultima_coluna(db_engine, interaction, old_card_id):
+def test_move_old_cards_move_para_ultima_coluna(db_engine, interaction, old_card_id, monkeypatch):
+    monkeypatch.setenv("NUM_ACTIVE_COLUMNS", "0")
     with UnitOfWork() as uow:
         board = Board.get_by_id(interaction.board.id)
         dest_id = sorted(board.columns, key=lambda c: c.position)[-1].id
@@ -633,7 +635,8 @@ def test_move_old_cards_nao_move_cards_recentes(db_engine, interaction, old_card
     assert card.column_id == source_col_id
 
 
-def test_move_old_cards_nao_move_arquivados(db_engine, interaction):
+def test_move_old_cards_nao_move_arquivados(db_engine, interaction, monkeypatch):
+    monkeypatch.setenv("NUM_ACTIVE_COLUMNS", "0")
     past = datetime.now() - timedelta(days=31)
     with UnitOfWork() as uow:
         board = Board.get_by_id(interaction.board.id)

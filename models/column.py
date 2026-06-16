@@ -83,6 +83,22 @@ class Column(ExoSQLModel, table=True):
     def contains_card(self, card: "Card") -> bool:
         return card in self.cards
 
+    def active_count(self) -> int:
+        return sum(1 for c in self.cards if not c.archived)
+
+    def wip_status(self) -> str:
+        if self.wip_limit == 0:
+            return "NO_LIMIT"
+        count = self.active_count()
+        if count > self.wip_limit:
+            return "EXCEEDED"
+        if count == self.wip_limit:
+            return "AT_LIMIT"
+        return "OK"
+
+    def stale_cards(self, days: int) -> list["Card"]:
+        return [c for c in self.cards if not c.archived and c.is_stale(days)]
+
     @classmethod
     def get_rag_sources(cls) -> list[str]:
         return ["rag/column.md", "rag/kanban-to-do.md"]

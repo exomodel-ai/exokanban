@@ -139,6 +139,15 @@ class Board(ExoSQLModel, table=True):
         if not self.columns:
             raise ValueError(f"Board '{self.name}' has no columns.")
 
+        if prompt.strip().isdigit():
+            col_id = int(prompt.strip())
+            for col in self.columns:
+                if col.id == col_id:
+                    return col
+            if strict:
+                raise ValueError(f"No column found with id: '{col_id}'")
+            return self.columns[0]
+
         column_names = [col.name for col in self.columns]
 
         class _Match(BaseModel):
@@ -203,6 +212,23 @@ class Board(ExoSQLModel, table=True):
             return column.show_column_cards()
         columns = [col for col in self.get_columns() if col.visible]
         return "\n\n".join(col.show_column_cards() for col in columns)
+
+    def active_columns(self) -> list["Column"]:
+        import os
+        n = int(os.getenv("NUM_ACTIVE_COLUMNS", "4"))
+        return sorted(self.columns, key=lambda c: c.position)[:n]
+
+    def done_column(self) -> Optional["Column"]:
+        import os
+        n = int(os.getenv("NUM_ACTIVE_COLUMNS", "4"))
+        sorted_cols = sorted(self.columns, key=lambda c: c.position)
+        return sorted_cols[n] if len(sorted_cols) > n else None
+
+    def archive_column(self) -> Optional["Column"]:
+        import os
+        n = int(os.getenv("NUM_ACTIVE_COLUMNS", "4"))
+        sorted_cols = sorted(self.columns, key=lambda c: c.position)
+        return sorted_cols[n + 1] if len(sorted_cols) > n + 1 else None
 
     @classmethod
     def get_rag_sources(cls) -> list[str]:

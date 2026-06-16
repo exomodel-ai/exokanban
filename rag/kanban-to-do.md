@@ -9,7 +9,7 @@ Destino padrão de todo card novo. Representa a caixa de entrada — tarefas cap
 Cards que foram qualificados e priorizados saem do Inbox e entram aqui. Para mover um card para Prioridade, ele deve ter título claro, descrição suficiente para ser executado e, opcionalmente, uma data limite (`due_date`).
 
 ### Nesta Semana
-Coluna de planejamento semanal. Contém as metas e tarefas selecionadas para a semana atual. Cards entram aqui vindos de Prioridade quando há comprometimento de execução na semana corrente. É o ponto de partida para o planejamento diário — cards de Nesta Semana são promovidos para Hoje conforme a disponibilidade do dia.
+Coluna de planejamento macro da semana. Representa as prioridades e metas escolhidas para a semana corrente — uma visão agregada do que precisa acontecer, sem o nível de detalhe do dia a dia. Serve de guia para o planejamento diário: ao montar o "Hoje", o responsável consulta esta coluna para decidir o que avança. 
 
 ### Hoje
 Cards que serão executados **no dia atual**. Somente cards vindos da coluna Nesta Semana devem entrar aqui.

@@ -181,6 +181,58 @@ def export_to_csv() -> str:
     return _get_service().export_to_csv()
 
 
+@mcp.tool()
+def move_card_to_next_column(card_id: int) -> str:
+    """Move a card one step forward to the next column in position order."""
+    try:
+        dest = _get_service().move_card_to_next_column(card_id)
+        return f"Card #{card_id} moved to '{dest}'."
+    except ValueError as e:
+        return str(e)
+
+
+@mcp.tool()
+def get_column(column_id: int) -> str:
+    """Get a column by its numeric id. Returns full column details."""
+    try:
+        column = _get_service().get_column(column_id)
+        return column.to_ui(format="markdown")
+    except ValueError as e:
+        return str(e)
+
+
+@mcp.tool()
+def update_column(column_id: int, prompt: str) -> str:
+    """
+    Update a column's fields using a natural language instruction.
+    Example: update_column(2, "rename to In Review and set wip limit to 3")
+    Returns the updated column.
+    """
+    try:
+        column = _get_service().update_column(column_id, prompt)
+        return column.to_ui(format="markdown")
+    except ValueError as e:
+        return str(e)
+
+
+@mcp.tool()
+def analyze_board() -> str:
+    """Show board metrics: column load, WIP, due dates, priorities, staleness, lead time."""
+    return _html_to_md(_get_service().analyze_board())
+
+
+@mcp.tool()
+def run_board_prompt(prompt: str, current_card_id: int = 0) -> str:
+    """
+    Route a free-text natural language prompt through the board AI agent.
+    Optionally pass the current card id as context.
+    Returns the agent's response.
+    """
+    card_id = current_card_id if current_card_id > 0 else None
+    result, _ = _get_service().run_board_prompt(prompt, card_id)
+    return result
+
+
 if __name__ == "__main__":
     mcp.run(
         transport="http",

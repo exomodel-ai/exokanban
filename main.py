@@ -25,7 +25,7 @@ class KanbanInteraction(UserInteraction):
         super().__init__(*args, **kwargs)
         self._service = KanbanService(self.board.id)
         self._current_card_id: Optional[int] = None
-        self._board_card_buttons = os.getenv("BOARD_CARD_BUTTONS", "true").lower() == "true"
+        self._board_card_buttons = os.getenv("BOARD_CARD_BUTTONS", "false").lower() == "true"
 
     async def process_prompt(self, user_id, text):
         try:
@@ -57,12 +57,13 @@ class KanbanInteraction(UserInteraction):
                 "/column [id] - Show column\n"
                 "/updcolumn [id] [prompt] - Update column\n"
                 "/old - Move old cards to old cards column\n"
+                "/stats - Analyze board metrics\n"
                 "/due - Cards with due dates: overdue, today and next 7 days\n"
                 "/export - Export board.csv, column.csv and card.csv\n"
                 "or type the prompt and interact with the board AI agent\n"
             )
         elif "/instructions" in msg_clean:
-            return self.board.run_filling_instructions()
+            return self._service.run_filling_instructions()
         elif "/board" in msg_clean:
             return self.show_board()
         elif "/cards" in msg_clean:
@@ -92,6 +93,8 @@ class KanbanInteraction(UserInteraction):
             return self.move_current_card(prompt)
         elif "/old" in msg_clean:
             return self._service.move_old_cards()
+        elif "/stats" in msg_clean:
+            return self._service.analyze_board()
         elif "/due" in msg_clean:
             return self._service.show_due_cards()
         elif "/export" in msg_clean:
