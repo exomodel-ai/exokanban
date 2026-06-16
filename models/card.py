@@ -27,9 +27,22 @@ class Card(ExoSQLModel, table=True):
     def update_object(self, prompt: str) -> dict:
         result = super().update_object(prompt)
         if result:
-            from datetime import datetime
             self.updated_at = datetime.now()
+        if not self.title:
+            # LLM skipped title — request it explicitly from the available context
+            context = self.description or prompt
+            title = self.update_field("title", context)
+            if title:
+                self.updated_at = datetime.now()
         return result
+
+    def move_to(self, column_id: int) -> None:
+        self.column_id = column_id
+        self.updated_at = datetime.now()
+
+    def archive(self) -> None:
+        self.archived = True
+        self.updated_at = datetime.now()
 
     @classmethod
     def _build_extraction_schema(cls):

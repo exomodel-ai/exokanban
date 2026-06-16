@@ -93,7 +93,7 @@ class KanbanService:
             if not card:
                 raise ValueError(f"Card #{card_id} not found.")
             title = card.title
-            card.archived = True
+            card.archive()
             card.save()
             uow.commit()
         return f"Card #{card_id} '{title}' archived."

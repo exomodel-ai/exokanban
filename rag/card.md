@@ -37,6 +37,8 @@ A Card represents a single, discrete unit of work within a Kanban system. It cap
 ## Instructions
 
 ### Field: `title`
+**MANDATORY — must never be empty or null.** Always generate a title, even when the prompt does not state one explicitly. Derive it from the task being described, the description, or the context.
+
 Write a title that is self-explanatory without needing to open the card. Use an action verb followed by a clear object.
 
 Good examples: `Draft proposal for client ABC`, `Buy groceries for Sunday dinner`, `Review insurance policy renewal`.  

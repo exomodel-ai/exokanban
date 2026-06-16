@@ -71,7 +71,7 @@ class Column(ExoSQLModel, table=True):
 
     def insert_card(self, card: "Card") -> None:
         if self.id is not None:
-            card.column_id = self.id
+            card.move_to(self.id)
         try:
             self.cards.insert(0, card)
         except DetachedInstanceError:
