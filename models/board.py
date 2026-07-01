@@ -207,11 +207,15 @@ class Board(ExoSQLModel, table=True):
             return "No column found"
         return column.show_column_cards()
 
-    def show_column_cards(self, column: "Column" = None) -> str:
+    def show_column_cards(self, column: "Column" = None, last_col_limit: int = None) -> str:
         if column:
             return column.show_column_cards()
-        columns = [col for col in self.get_columns() if col.visible]
-        return "\n\n".join(col.show_column_cards() for col in columns)
+        columns = sorted([col for col in self.get_columns() if col.visible], key=lambda c: c.position)
+        parts = []
+        for i, col in enumerate(columns):
+            lim = last_col_limit if (last_col_limit and i == len(columns) - 1) else None
+            parts.append(col.show_column_cards(limit=lim))
+        return "\n\n".join(parts)
 
     def active_columns(self) -> list["Column"]:
         import os

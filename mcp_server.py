@@ -170,9 +170,9 @@ def show_due_cards() -> str:
 
 
 @mcp.tool()
-def move_old_cards() -> str:
-    """Move cards older than 30 days from the penultimate column to the last (archive) column."""
-    return _get_service().move_old_cards()
+def move_old_cards(days: int = 30) -> str:
+    """Move cards older than N days from the penultimate column to the last (archive) column. Defaults to 30 days."""
+    return _get_service().move_old_cards(days=days)
 
 
 @mcp.tool()

@@ -92,7 +92,9 @@ class KanbanInteraction(UserInteraction):
             prompt = msg[msg.lower().index("/move") + len("/move"):].strip()
             return self.move_current_card(prompt)
         elif "/old" in msg_clean:
-            return self._service.move_old_cards()
+            arg = msg[msg.lower().index("/old") + len("/old"):].strip()
+            days = int(arg) if arg.isdigit() else 30
+            return self._service.move_old_cards(days=days)
         elif "/stats" in msg_clean:
             return self._service.analyze_board()
         elif "/due" in msg_clean:
@@ -224,7 +226,7 @@ class KanbanInteraction(UserInteraction):
             return BotResponse(text=text, reply_markup=InlineKeyboardMarkup(rows) if rows else None)
         return self._service.show_board()
     def show_due_cards(self) -> str:    return self._service.show_due_cards()
-    def move_old_cards(self) -> str:    return self._service.move_old_cards()
+    def move_old_cards(self, days: int = 30) -> str: return self._service.move_old_cards(days=days)
     def export_to_csv(self) -> str:     return self._service.export_to_csv()
 
 

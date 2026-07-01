@@ -133,7 +133,7 @@ class KanbanService:
             board = Board.get_by_id(self.board_id)
             for col in board.columns:
                 _ = col.cards
-            result = board.show_column_cards()
+            result = board.show_column_cards(last_col_limit=10)
         return result
 
     def show_board_data(self) -> tuple[str, list[list[tuple[int, str]]]]:
@@ -142,12 +142,16 @@ class KanbanService:
             board = Board.get_by_id(self.board_id)
             for col in board.columns:
                 _ = col.cards
-            text = board.show_column_cards()
-            card_groups = [
-                [(c.id, c.title) for c in col.get_cards()]
-                for col in sorted(board.columns, key=lambda c: c.position)
-                if col.get_cards()
-            ]
+            text = board.show_column_cards(last_col_limit=10)
+            sorted_cols = sorted([col for col in board.columns if col.visible], key=lambda c: c.position)
+            card_groups = []
+            for i, col in enumerate(sorted_cols):
+                cards = col.get_cards()
+                if not cards:
+                    continue
+                is_last = (i == len(sorted_cols) - 1)
+                displayed = cards[:10] if is_last else cards
+                card_groups.append([(c.id, c.title) for c in displayed])
         return text, card_groups
 
     def list_cards(self, column_hint: str = "") -> str:
@@ -209,9 +213,9 @@ class KanbanService:
 
         return result
 
-    def move_old_cards(self) -> str:
+    def move_old_cards(self, days: int = 30) -> str:
         from datetime import datetime, timedelta
-        cutoff = datetime.now() - timedelta(days=30)
+        cutoff = datetime.now() - timedelta(days=days)
         with UnitOfWork() as uow:
             board = Board.get_by_id(self.board_id)
             col_source = board.done_column()
@@ -229,7 +233,7 @@ class KanbanService:
                 col_dest.insert_card(card)
             uow.commit()
         if not titles:
-            return f"No cards older than 30 days in '{source_name}'."
+            return f"No cards older than {days} days in '{source_name}'."
         names = ", ".join(f"'{t}'" for t in titles)
         return f"{len(titles)} card(s) moved to '{dest_name}': {names}."
 

@@ -45,7 +45,7 @@ class Column(ExoSQLModel, table=True):
         )
 
     @llm_function
-    def show_column_cards(self) -> str:
+    def show_column_cards(self, limit: int = None) -> str:
         cards = self.get_cards()
         count = len(cards)
         if self.wip_limit > 0:
@@ -58,7 +58,8 @@ class Column(ExoSQLModel, table=True):
         lines = [f"<b>#{self.id} {self.name}</b> <i>({count_str})</i>{wip_indicator}", "━━━━━━━━━━━━━━━━━━━━"]
         if not cards:
             lines.append("<i>No cards</i>")
-        for card in cards:
+        displayed = cards[:limit] if limit else cards
+        for card in displayed:
             parts = [f"#{card.id} {card.title}"]
             if card.tag:
                 parts.append(f"[{card.tag}]")
@@ -67,6 +68,8 @@ class Column(ExoSQLModel, table=True):
             if card.due_date:
                 parts.append(f"📅 {card.due_date.strftime('%d/%m/%Y')}")
             lines.append(" · ".join(parts))
+        if limit and count > limit:
+            lines.append(f"<i>[... +{count - limit} more — use /cards {self.id} to see all]</i>")
         return "\n".join(lines)
 
     def insert_card(self, card: "Card") -> None:
