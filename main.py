@@ -116,7 +116,11 @@ class KanbanInteraction(UserInteraction):
             else:
                 return self.get_card_from_prompt(hint)
         else:
-            return self.run_master_prompt(msg)
+            from mcp_client import run_agentic_prompt
+            result, new_card_id = await run_agentic_prompt(msg, self._current_card_id)
+            if new_card_id:
+                self._current_card_id = new_card_id
+            return result
 
     # ------------------------------------------------------------------
     # Conversational wrappers — manage _current_card_id around service calls
