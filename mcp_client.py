@@ -140,7 +140,7 @@ async def run_agentic_prompt(
     transport = _MCP_URL if _MCP_URL else None
     client_kwargs = {}
     if _MCP_URL and _MCP_TOKEN:
-        client_kwargs["headers"] = {"Authorization": f"Bearer {_MCP_TOKEN}"}
+        client_kwargs["auth"] = _MCP_TOKEN
 
     if transport is None:
         # In-process: import the FastMCP app — no HTTP server required.
